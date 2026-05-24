@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محرك البيئة المتغيرة - الجدران الديناميكية والتلاشي الممتد (V13)</title>
+    <style>
+        :root {
+            --bg-dark: #01040a;
+            --panel-glow: #00D4FF;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background-color: var(--bg-dark); font-family: sans-serif; color: #fff; }
+
+        .viewport-hub { position: relative; width: 100%; height: 100%; }
+        #webgl-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        .ui-hud-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; padding: 30px;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .crumbs-nav { pointer-events: auto; display: flex; gap: 10px; font-size: 0.85rem; color: #8E9499; }
+        .crumbs-nav span.active { color: var(--panel-glow); font-weight: bold; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div class="viewport-hub">
+        <canvas id="webgl-view"></canvas>
+
+        <div class="ui-hud-overlay">
+            <header style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div class="crumbs-nav">
+                    <span>الرئيسية</span> &gt; <span class="active">الممر المتغير الحركي</span>
+                </div>
+                <h1 style="font-size: 1.3rem; text-shadow: 0 0 10px var(--panel-glow);">البيئة المتغيرة الموحدة (V13)</h1>
+            </header>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Global Render System Setup ---
+        const canvas = document.getElementById('webgl-view');
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const scene = new THREE.Scene();
+        
+        // Dynamic fog initialization matching the core environment
+        const fogColorInstance = new THREE.Color(0x01040a);
+        scene.fog = new THREE.FogExp2(fogColorInstance, 0.00085);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+        camera.position.set(0, 0, 0);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const headlight = new THREE.PointLight(0xffffff, 2.0, 1500);
+        scene.add(headlight);
+
+        // --- 2. Dynamic Cave Structure and Material Geometry ---
+        const totalPanels = 40; 
+        const panelSpacing = 320; 
+        const caveLength = (totalPanels * panelSpacing) + 4000;
+
+        const caveGeometry = new THREE.CylinderGeometry(480, 480, caveLength, 16, 120, true);
+        caveGeometry.rotateX(Math.PI / 2);
+        caveGeometry.translate(0, 0, -caveLength / 2);
+
+        // Displace vertices to generate organic crystalline topography
+        const posAttr = caveGeometry.attributes.position;
+        const colors = [];
+        for (let i = 0; i < posAttr.count; i++) {
+            let x = posAttr.getX(i);
+            let y = posAttr.getY(i);
+            let z = posAttr.getZ(i);
+            let angle = Math.atan2(y, x);
+            
+            let rockNoise = Math.sin(z * 0.03) * 40 + Math.cos(angle * 6 + z * 0.01) * 25;
+            posAttr.setX(i, x + Math.cos(angle) * rockNoise);
+            posAttr.setY(i, y + Math.sin(angle) * rockNoise);
+
+            // Base crystalline shading properties
+            if (Math.abs(Math.sin(z * 0.04)) > 0.88) {
+                colors.push(0.2, 0.4, 0.6);
+            } else {
+                colors.push(0.05, 0.08, 0.12);
+            }
+        }
+        caveGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        caveGeometry.computeVertexNormals();
+
+        // Optimized Lambert material setup allowing dynamic base and emissive updates
+        const caveMaterial = new THREE.MeshLambertMaterial({
+            vertexColors: true,
+            flatShading: true,
+            side: THREE.BackSide,
+            color: new THREE.Color(0x01131a),
+            emissive: new THREE.Color(0x004466)
+        });
+        const caveMesh = new THREE.Mesh(caveGeometry, caveMaterial);
+        scene.add(caveMesh);
+
+        // --- 3. Dynamic Multi-Gradient Procedural Panels ---
+        const panelsGroup = new THREE.Group();
+        scene.add(panelsGroup);
+
+        const colorPalettes = [
+            { start: '#011f38', end: '#00d4ff' }, 
+            { start: '#1a0236', end: '#9d00ff' }, 
+            { start: '#012e1b', end: '#00ff87' }, 
+            { start: '#360214', end: '#ff0055' }  
+        ];
+
+        const createPanelTexture = (title, index) => {
+            const pCanvas = document.createElement('canvas');
+            pCanvas.width = 512;
+            pCanvas.height = 680;
+            const pCtx = pCanvas.getContext('2d');
+
+            pCtx.fillStyle = 'rgba(3, 9, 20, 0.98)';
+            pCtx.fillRect(0, 0, pCanvas.width, pCanvas.height);
+
+            const palette = colorPalettes[index % colorPalettes.length];
+
+            pCtx.strokeStyle = palette.end + '55';
+            pCtx.lineWidth = 6;
+            pCtx.strokeRect(3, 3, pCanvas.width - 6, pCanvas.height - 6);
+
+            const grad = pCtx.createLinearGradient(0, 0, pCanvas.width, 240);
+            grad.addColorStop(0, palette.start);
+            grad.addColorStop(1, palette.end);
+            pCtx.fillStyle = grad;
+            pCtx.fillRect(25, 25, pCanvas.width - 50, 240);
+
+            pCtx.textBaseline = 'top';
+            pCtx.textAlign = 'right';
+            pCtx.fillStyle = '#ffffff';
+
+            pCtx.font = 'bold 34px sans-serif';
+            pCtx.fillText(title, pCanvas.width - 40, 295);
+
+            pCtx.font = '24px sans-serif';
+            pCtx.fillStyle = '#9fa9b8';
+            
+            const textLines = [
+                "تم إصلاح آلية التلاشي للألواح.",
+                "الجدران تتغير ألوانها البنيوية الآن بالكامل",
+                "تزامناً مع عملية التمرير المستمرة دون",
+                "أي انقطاع أو فجوات سوداء مفاجئة."
+            ];
+            
+            let yOffset = 365;
+            textLines.forEach(line => {
+                pCtx.fillText(line, pCanvas.width - 40, yOffset);
+                yOffset += 45;
+            });
+
+            const texture = new THREE.CanvasTexture(pCanvas);
+            texture.generateMipmaps = false;
+            texture.minFilter = THREE.LinearFilter;
+            return texture;
+        };
+
+        const panelWidth = 185;
+        const panelHeight = 245;
+        const panelGeometry = new THREE.PlaneGeometry(panelWidth, panelHeight);
+
+        let panelsData = [];
+
+        for (let i = 0; i < totalPanels; i++) {
+            const isLeft = (i % 2 === 0);
+            const texture = createPanelTexture(`البطاقة المعرفية المحدثة ${i + 1}`, i);
+            
+            const panelMaterial = new THREE.MeshLambertMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+                transparent: true
+            });
+
+            const panelMesh = new THREE.Mesh(panelGeometry, panelMaterial);
+            
+            const xPos = isLeft ? -125 : 125;
+            const zPos = -(i * panelSpacing) - 400;
+            
+            panelMesh.position.set(xPos, 0, zPos);
+            panelsGroup.add(panelMesh);
+
+            panelsData.push({
+                mesh: panelMesh,
+                z: zPos,
+                isLeft: isLeft
+            });
+        }
+
+        // --- 4. Environment Interpolation Data Maps ---
+        // Color transition maps for the cave body and ambient atmosphere
+        const wallBaseColors = [
+            new THREE.Color(0x020a14), // Deep Cyan Phase
+            new THREE.Color(0x120124), // Deep Purple Phase
+            new THREE.Color(0x01140a), // Deep Emerald Phase
+            new THREE.Color(0x1a020b)  // Deep Magenta Phase
+        ];
+
+        const wallEmissiveColors = [
+            new THREE.Color(0x004477), // Cyan Glow
+            new THREE.Color(0x440088), // Purple Glow
+            new THREE.Color(0x005522), // Emerald Glow
+            new THREE.Color(0x660022)  // Magenta Glow
+        ];
+
+        // --- 5. Sync Scroll and Dynamic Control System ---
+        let currentZ = 0;
+        let targetZ = 0;
+        let isRunning = false;
+
+        const animateScene = () => {
+            const diff = targetZ - currentZ;
+            currentZ += diff * 0.14; 
+
+            camera.position.z = -currentZ;
+            headlight.position.z = -currentZ - 10;
+
+            // Compute dynamic wall color interpolation based on scroll depth
+            let colorProgress = currentZ / (panelSpacing * 3); // Smooth shifting every 3 panels
+            let currentFloor = Math.floor(colorProgress) % wallBaseColors.length;
+            let currentCeil = (currentFloor + 1) % wallBaseColors.length;
+            let blendFactor = colorProgress % 1;
+
+            // Direct runtime updates to the wall mesh material and ambient atmosphere
+            caveMaterial.color.copy(wallBaseColors[currentFloor]).lerp(wallBaseColors[currentCeil], blendFactor);
+            caveMaterial.emissive.copy(wallEmissiveColors[currentFloor]).lerp(wallEmissiveColors[currentCeil], blendFactor);
+            scene.fog.color.copy(caveMaterial.color);
+
+            panelsData.forEach(panel => {
+                let relativeZ = panel.z + currentZ;
+
+                // Expanded culling range to allow complete visual alpha decay before removal
+                if (relativeZ > 130 || relativeZ < -2400) {
+                    panel.mesh.visible = false;
+                    return;
+                } else {
+                    panel.mesh.visible = true;
+                }
+
+                // Corrected execution window for proximity fading
+                if (relativeZ > -400) {
+                    // Smooth linear alpha decay from 1 down to 0 across 500px window
+                    let exitFadeFactor = (relativeZ - (-400)) / 500;
+                    exitFadeFactor = Math.max(0, Math.min(1, exitFadeFactor));
+                    panel.mesh.material.opacity = 1 - exitFadeFactor;
+                } else if (relativeZ < -1600) {
+                    // Smooth far-fog alpha decay
+                    let farFadeFactor = 1 - ((-relativeZ - 1600) / 800);
+                    panel.mesh.material.opacity = Math.max(0, Math.min(1, farFadeFactor));
+                } else {
+                    panel.mesh.material.opacity = 1;
+                }
+
+                // Rotational projection adjustments for readability
+                let baseAngle = panel.isLeft ? 0.32 : -0.32; 
+                let finalAngle = baseAngle;
+
+                if (relativeZ > -450 && relativeZ < -50) {
+                    let factor = (relativeZ - (-450)) / 400;
+                    factor = Math.max(0, Math.min(1, factor));
+                    finalAngle = baseAngle * (1 - factor); 
+                } else if (relativeZ >= -50) {
+                    finalAngle = 0;
+                }
+
+                panel.mesh.rotation.y = finalAngle;
+            });
+
+            renderer.render(scene, camera);
+
+            if (Math.abs(diff) > 0.01) {
+                requestAnimationFrame(animateScene);
+            } else {
+                currentZ = targetZ;
+                isRunning = false;
+            }
+        };
+
+        const triggerMovement = () => {
+            if (!isRunning) {
+                isRunning = true;
+                requestAnimationFrame(animateScene);
+            }
+        };
+
+        window.addEventListener('wheel', (e) => {
+            targetZ += e.deltaY * 0.75;
+            if (targetZ < 0) targetZ = 0;
+            if (targetZ > totalPanels * panelSpacing) targetZ = totalPanels * panelSpacing;
+            triggerMovement();
+        }, { passive: true });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.render(scene, camera);
+        });
+
+        // Initialize view frame
+        renderer.render(scene, camera);
+    </script>
+</body>
+</html>

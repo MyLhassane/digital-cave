@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محرك البيئة المحيطية الموحد - الأداء والعودة الحركية (V14)</title>
+    <style>
+        :root {
+            --bg-dark: #01040a;
+            --panel-glow: #00D4FF;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background-color: var(--bg-dark); font-family: sans-serif; color: #fff; }
+        .viewport-hub { position: relative; width: 100%; height: 100%; }
+        #webgl-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        .ui-hud-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; padding: 40px;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        
+        /* تفعيل Breadcrumbs كروابط تفاعلية */
+        .nav-crumbs { font-size: 0.9rem; color: #7a828e; pointer-events: auto; }
+        .nav-crumbs a { color: inherit; text-decoration: none; cursor: pointer; transition: color 0.3s; }
+        .nav-crumbs a:hover { color: var(--panel-glow); }
+        .nav-crumbs span.active { color: var(--panel-glow); font-weight: bold; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div class="viewport-hub">
+        <canvas id="webgl-view"></canvas>
+
+        <div class="ui-hud-overlay">
+            <header style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div class="nav-crumbs">
+                    <a id="crumb-root">البوابة المركزية</a> <span id="crumb-sub"></span>
+                </div>
+                <h1 id="main-hud-title" style="font-size: 1.5rem; text-shadow: 0 0 10px var(--panel-glow);">المدخل الرئيسي للمجالات</h1>
+            </header>
+            
+            <div id="status-tip" style="align-self: center; background: rgba(0, 212, 255, 0.1); border: 1px solid var(--panel-glow); padding: 10px 20px; border-radius: 4px; font-size: 0.9rem;">
+                استخدم عجلة الفأرة للتمرير؛ مرر للأعلى عند البداية للخروج العكسي.
+            </div>
+            <div></div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. System Core & Performance Setup ---
+        const canvas = document.getElementById('webgl-view');
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const scene = new THREE.Scene();
+        const baseFogColor = new THREE.Color(0x01040a);
+        scene.fog = new THREE.FogExp2(baseFogColor, 0.0009);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 15000);
+        
+        // Initial cinematic camera position for the hub
+        const initialCameraPos = new THREE.Vector3(0, 80, 800);
+        camera.position.copy(initialCameraPos);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const headlight = new THREE.PointLight(0xffffff, 2.5, 1800);
+        scene.add(headlight);
+
+        // --- 2. Architecture States ---
+        const STATE_HUB = 'HUB';
+        const STATE_TRANSITION_IN = 'TRANSITION_IN';
+        const STATE_TUNNEL = 'TUNNEL';
+        const STATE_TRANSITION_OUT = 'TRANSITION_OUT';
+        let currentSystemState = STATE_HUB;
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        let activeDomain = null;
+        let transitionProgress = 0;
+        let scrollTargetZ = 0;
+        let scrollCurrentZ = 0;
+
+        let currentCameraLookAt = new THREE.Vector3(0, 40, 0);
+
+        // --- 3. بناء الخلفية المحيطية المتكاملة والبهو الفاخر (Ambient Dome & Hub) ---
+        // قبة محيطية عملاقة تملأ الجوانب السوداء وتوفر خلفية "كهف متكامل" (Integrated Environment)
+        const ambientDomeGeom = new THREE.SphereGeometry(6000, 16, 12);
+        const ambientDomeMat = new THREE.MeshBasicMaterial({
+            color: 0x010c1a,
+            side: THREE.BackSide,
+            fog: false // لا يتأثر بالضباب ليبقى كخلفية نهائية
+        });
+        const ambientDome = new THREE.Mesh(ambientDomeGeom, ambientDomeMat);
+        scene.add(ambientDome);
+
+        const hubGroup = new THREE.Group();
+        scene.add(hubGroup);
+
+        // توليد قاعة المدخل الكريستالية الثابتة والمزخرفة عتادياً (High-Dose Procedural Decoration)
+        const hubDomeGeom = new THREE.CylinderGeometry(600, 650, 450, 24, 8, true);
+        hubDomeGeom.rotateX(Math.PI / 2);
+        
+        const domePos = hubDomeGeom.attributes.position;
+        const domeColors = [];
+        for(let i=0; i<domePos.count; i++) {
+            let x = domePos.getX(i);
+            let y = domePos.getY(i);
+            let z = domePos.getZ(i);
+            let angle = Math.atan2(y, x);
+            
+            // حقن زخارف هيكلية معقدة في جدران المدخل المركزي (إضاءة البوابات الكلاسيكية)
+            let pattern = Math.sin(angle * 12) * 30 + Math.cos(z * 0.05) * 20;
+            domePos.setX(i, x + Math.cos(angle) * pattern);
+            domePos.setY(i, y + Math.sin(angle) * pattern);
+
+            if (Math.abs(z) > 180 || Math.abs(Math.sin(angle*6)) > 0.8) {
+                domeColors.push(0.0, 0.4, 0.7); // عروق توهج سيان ثابتة
+            } else {
+                domeColors.push(0.03, 0.06, 0.12);
+            }
+        }
+        hubDomeGeom.setAttribute('color', new THREE.Float32BufferAttribute(domeColors, 3));
+        hubDomeGeom.computeVertexNormals();
+
+        // استخدام مادة Lambert فائقة السلاسة لأداء معدل إطارات فائق (Performance Standard)
+        const hubMaterial = new THREE.MeshLambertMaterial({
+            vertexColors: true, flatShading: true, side: THREE.DoubleSide,
+            emissive: new THREE.Color(0x002b47), emissiveIntensity: 0.3
+        });
+        const hubMesh = new THREE.Mesh(hubDomeGeom, hubMaterial);
+        hubMesh.position.set(0, 40, 350);
+        hubGroup.add(hubMesh);
+
+        // --- 4. تكوين مسارات الأنفاق الثلاثة بالزخارف المعتمدة مسبقاً (V13 Enhanced) ---
+        const domainsConfig = {
+            technical: { id: 'technical', title: 'علوم الحاسوب', color: '#00d4ff', angle: -Math.PI / 5, xOffset: -400, zOffset: -100, rotY: 0.5, geometryType: 'HEXAGON' },
+            organic: { id: 'organic', title: 'الهندسة والتقنية', color: '#9d00ff', angle: 0, xOffset: 0, zOffset: -250, rotY: 0, geometryType: 'ORGANIC_FLUID' }, // استخدام الممر العضوي لـ "الثقافية" سابقاً
+            structural: { id: 'structural', title: 'علوم الفضاء', color: '#00ff87', angle: Math.PI / 5, xOffset: 400, zOffset: -100, rotY: -0.5, geometryType: 'SOLID_BRUTALIST' }
+        };
+
+        const tunnelsGroup = new THREE.Group();
+        scene.add(tunnelsGroup);
+        const tunnelsContext = {};
+
+        // دالة توليد النسيج الصخري الهندسي ( procedurally pre-calculated vertex colors for performance)
+        const buildTunnelGeometry = (config) => {
+            let geom;
+            const length = 11000;
+            const segmentsZ = 120;
+            
+            if (config.geometryType === 'HEXAGON') {
+                geom = new THREE.CylinderGeometry(400, 400, length, 6, segmentsZ, true);
+            } else if (config.geometryType === 'SOLID_BRUTALIST') {
+                geom = new THREE.CylinderGeometry(420, 420, length, 4, segmentsZ, true);
+            } else {
+                // ممر عضوي انسيابي (Organic Fluid) - أضعف برمجياً في V13، قمنا بتحسينه عتادياً
+                geom = new THREE.CylinderGeometry(400, 400, length, 20, segmentsZ, true);
+            }
+
+            geom.rotateX(Math.PI / 2);
+            geom.rotateY(config.angle);
+            geom.translate(config.xOffset, 40, -(length / 2) + config.zOffset);
+
+            const pos = geom.attributes.position;
+            const colors = [];
+            for (let i = 0; i < pos.count; i++) {
+                // سحب الإحداثيات المحلية المدوّرة للحساب الرياضي لتعرج الصخور
+                let xLocal = pos.getX(i) - config.xOffset;
+                let yLocal = pos.getY(i) - 40;
+                let zLocal = pos.getZ(i) - config.zOffset;
+                let angle = Math.atan2(yLocal, xLocal);
+
+                // تطبيق التعرج الصخري الخاص بكل نفق
+                if (config.geometryType === 'ORGANIC_FLUID') {
+                    // تموجات انسيابية فائقة الخفة برمجياً (Enhanced Performance Waves)
+                    let fluidNoise = Math.sin(zLocal * 0.02) * 50 + Math.cos(angle * 4 + zLocal * 0.01) * 35;
+                    pos.setX(i, pos.getX(i) + Math.cos(angle) * fluidNoise);
+                    pos.setY(i, pos.getY(i) + Math.sin(angle) * fluidNoise);
+                    colors.push(0.15, 0.05, 0.2); // تدرج بنفسجي أساسي
+                } else {
+                    // تعرج صخري تقليدي لباقي الأنفاق
+                    let rockNoise = Math.sin(zLocal * 0.03) * 40 + Math.cos(angle * 6 + zLocal * 0.01) * 25;
+                    pos.setX(i, pos.getX(i) + Math.cos(angle) * rockNoise);
+                    pos.setY(i, pos.getY(i) + Math.sin(angle) * rockNoise);
+                    colors.push(0.04, 0.08, 0.12);
+                }
+            }
+            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geom.computeVertexNormals();
+
+            // استخدام مادة Lambert للأداء الفائق
+            const mat = new THREE.MeshLambertMaterial({
+                vertexColors: true, flatShading: true, side: THREE.BackSide,
+                emissive: new THREE.Color(config.color).multiplyScalar(0.18)
+            });
+            const mesh = new THREE.Mesh(geom, mat);
+            tunnelsGroup.add(mesh);
+            return mesh;
+        };
+
+        // توليد مسبق للأنفاق الثلاثة في الفضاء الإحداثي المشترك لضمان الانسيابية المطلقة
+        Object.values(domainsConfig).forEach(config => {
+            tunnelsContext[config.id] = { mesh: buildTunnelGeometry(config), config: config, panels: [] };
+            
+            // لافتات البوابات داخل البهو الرئيسي القابلة للنقر (Portals)
+            const gCanvas = document.createElement('canvas'); gCanvas.width = 512; gCanvas.height = 300;
+            const gCtx = gCanvas.getContext('2d'); gCtx.fillStyle = 'rgba(2, 6, 20, 0.9)'; gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height);
+            gCtx.strokeStyle = config.color; gCtx.lineWidth = 10; gCtx.strokeRect(5, 5, gCanvas.width - 10, gCanvas.height - 10);
+            gCtx.fillStyle = '#ffffff'; gCtx.font = 'bold 36px sans-serif'; gCtx.textAlign = 'center'; gCtx.textBaseline = 'middle';
+            gCtx.fillText(config.title, gCanvas.width / 2, gCanvas.height / 2);
+            
+            const tex = new THREE.CanvasTexture(gCanvas);
+            const gateMat = new THREE.MeshLambertMaterial({ map: tex, emissive: new THREE.Color(config.color), emissiveIntensity: 0.3 });
+            const gateMesh = new THREE.Mesh(new THREE.PlaneGeometry(160, 100), gateMat);
+            
+            gateMesh.position.set(config.xOffset, 50, config.zOffset + 50);
+            gateMesh.rotation.y = config.rotY;
+            gateMesh.userData = { domainId: config.id };
+            hubGroup.add(gateMesh);
+        });
+
+        // --- 5. هندسة استدعاء ألواح الأقسام (Section Cards generation) ---
+        const generateSectionPanels = (domainId) => {
+            const ctx = tunnelsContext[domainId];
+            const cfg = ctx.config;
+            const totalPanels = 25;
+            const panelSpacing = 340;
+            const panelGeometry = new THREE.PlaneGeometry(180, 240);
+
+            for (let i = 0; i < totalPanels; i++) {
+                const isLeft = (i % 2 === 0);
+                const pCanvas = document.createElement('canvas'); pCanvas.width = 512; pCanvas.height = 680;
+                const pCtx = pCanvas.getContext('2d');
+                pCtx.fillStyle = 'rgba(2, 6, 16, 0.98)'; pCtx.fillRect(0, 0, pCanvas.width, pCanvas.height);
+                pCtx.strokeStyle = cfg.color + '66'; pCtx.lineWidth = 6; pCtx.strokeRect(3, 3, pCanvas.width - 6, pCanvas.height - 6);
+                pCtx.fillStyle = '#ffffff'; pCtx.font = 'bold 38px sans-serif'; pCtx.textBaseline = 'top'; pCtx.textAlign = 'right';
+                pCtx.fillText(`قسم: ${cfg.title} ${i + 1}`, pCanvas.width - 40, 50);
+
+                const tex = new THREE.CanvasTexture(pCanvas); tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter;
+                const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, transparent: true });
+                const mesh = new THREE.Mesh(panelGeometry, mat);
+
+                // حساب التموضع المائل ثلاثي الأبعاد ليتناسب مع زاوية امتداد النفق
+                const localZ = -(i * panelSpacing) - 550; 
+                const localX = isLeft ? -120 : 120;
+
+                const globalX = cfg.xOffset + (localX * Math.cos(cfg.angle) + localZ * Math.sin(cfg.angle));
+                const globalZ = cfg.zOffset + (-localX * Math.sin(cfg.angle) + localZ * Math.cos(cfg.angle));
+
+                mesh.position.set(globalX, 40, globalZ);
+                mesh.rotation.y = cfg.angle; // موازاة لجدران النفق المائل
+                mesh.visible = false;
+                scene.add(mesh);
+
+                ctx.panels.push({ mesh: mesh, localZ: localZ, localX: localX });
+            }
+        };
+
+        // توليد مسبق للألواح في الفضاء الإحداثي المشترك
+        Object.keys(domainsConfig).forEach(id => generateSectionPanels(id));
+
+        // --- 6. حلقة التحكم المعماري والتنقل السينمائي (Kinematic Loop) ---
+        const mainEngineLoop = () => {
+            const time = Date.now() * 0.001;
+
+            if (currentSystemState === STATE_HUB) {
+                // البهو الرئيسي تفاعلي؛ حركة عائمة خفيفة
+                hubMesh.rotation.z = Math.sin(time * 0.05) * 0.02;
+                currentCameraLookAt.lerp(new THREE.Vector3(0, 40, 0), 0.08);
+                camera.lookAt(currentCameraLookAt);
+                
+                renderer.render(scene, camera);
+                requestAnimationFrame(mainEngineLoop);
+            } 
+            else if (currentSystemState === STATE_TRANSITION_IN || currentSystemState === STATE_TRANSITION_OUT) {
+                // حلقة التنقل الحركي (Lerp Transition) - عودة كاملة الانسيابية دون كسر
+                const isExit = (currentSystemState === STATE_TRANSITION_OUT);
+                const animSpeed = isExit ? 0.03 : 0.022; // سرعة عودة أسرع قليلاً للولوج العكسي
+                
+                if (!isExit) transitionProgress += animSpeed;
+                else transitionProgress -= animSpeed;
+
+                let t = Math.max(0, Math.min(1, transitionProgress));
+                let smoothT = t * t * (3 - 2 * t); // منحنى تسارع ناعم لمنع الكسر البصري
+
+                const cfg = domainsConfig[activeDomain];
+                
+                // حساب مسار الكاميرا من البهو لمدخل النفق
+                const entryPos = new THREE.Vector3(cfg.xOffset, 40, cfg.zOffset - 80);
+                camera.position.lerpVectors(initialCameraPos, entryPos, smoothT);
+
+                // حساب نقطة النظر المائلة في عمق النفق المحدد
+                const lookAtTarget = new THREE.Vector3(cfg.xOffset + 2000 * Math.sin(cfg.angle), 40, cfg.zOffset - 2000 * Math.cos(cfg.angle));
+                currentCameraLookAt.lerpVectors(new THREE.Vector3(0, 40, 0), lookAtTarget, smoothT);
+                camera.lookAt(currentCameraLookAt);
+                
+                headlight.position.copy(camera.position);
+
+                // تلاشي معالم البهو تدريجياً أثناء الاندفاع الداخلي
+                hubGroup.children.forEach(child => { if(child.material) child.material.opacity = 1 - smoothT; });
+
+                if (t >= 1) {
+                    currentSystemState = STATE_TUNNEL;
+                    tunnelsContext[activeDomain].panels.forEach(p => p.mesh.visible = true);
+                } else if (t <= 0) {
+                    // اكتمال رحلة العودة العكسية (Fly-back Complete)
+                    currentSystemState = STATE_HUB;
+                    activeDomain = null;
+                    hubGroup.visible = true;
+                    document.getElementById('main-hud-title').innerText = 'المدخل الرئيسي للمجالات';
+                    document.getElementById('crumb-sub').innerText = '';
+                }
+
+                renderer.render(scene, camera);
+                requestAnimationFrame(mainEngineLoop);
+            } 
+            else if (currentSystemState === STATE_TUNNEL) {
+                // نمط التصفح الطولي الفوري المزامنة (V13 Engine Module with Fixes)
+                const diff = scrollTargetZ - scrollCurrentZ;
+                scrollCurrentZ += diff * 0.14;
+
+                const cfg = domainsConfig[activeDomain];
+                const ctx = tunnelsContext[activeDomain];
+
+                // تحريك الكاميرا على طول المتجه المائل للنفق المحدد
+                camera.position.x = cfg.xOffset + scrollCurrentZ * Math.sin(cfg.angle);
+                camera.position.z = cfg.zOffset - scrollCurrentZ * Math.cos(cfg.angle);
+                headlight.position.copy(camera.position);
+
+                ctx.panels.forEach(panel => {
+                    let relativeDist = panel.localZ + scrollCurrentZ;
+
+                    // نظام الحجب الصارم عتادياً (Hardware-Accelerated Culling Bounds)
+                    if (relativeDist > 150 || relativeDist < -2500) {
+                        panel.mesh.visible = false;
+                        return;
+                    } else {
+                        panel.mesh.visible = true;
+                    }
+
+                    // التلاشي الشفاف الشفاف الناعم (Soft Alpha Decay window) لمنع الانقسام البصري
+                    if (relativeDist > -350) {
+                        // توسيع النطاق الحسابي للتلاشي القريب ليشمل الألواح التي توشك على الخروج من الشاشة
+                        let nearFade = (150 - relativeDist) / 500;
+                        panel.mesh.material.opacity = Math.max(0, Math.min(1, nearFade));
+                    } else if (relativeDist < -1800) {
+                        let farFade = 1 - ((-relativeDist - 1800) / 700);
+                        panel.mesh.material.opacity = Math.max(0, Math.min(1, farFade));
+                    } else {
+                        panel.mesh.material.opacity = 1;
+                    }
+
+                    // زوايا الدوران المواجهة للمستخدم للقراءة الكاملة (Readability Orientation)
+                    let baseAngle = cfg.angle + (panel.localX > 0 ? -0.32 : 0.32);
+                    let finalAngle = baseAngle;
+                    if (relativeZ > -450 && relativeZ < -50) {
+                        let factor = (relativeZ - (-450)) / 400;
+                        finalAngle = baseAngle + (panel.localX > 0 ? 0.32 : -0.32) * Math.max(0, Math.min(1, factor));
+                    } else if (relativeZ >= -50) {
+                        finalAngle = cfg.angle; // تعتدل اللوحة تماماً بموازاة عين الكاميرا
+                    }
+                    panel.mesh.rotation.y = finalAngle;
+                });
+
+                renderer.render(scene, camera);
+                if (Math.abs(diff) > 0.01) {
+                    requestAnimationFrame(mainEngineLoop);
+                }
+            }
+        };
+
+        // --- 7. Interactive Event Listeners (Raycasting, functional Crumb, and Auto-Reverse) ---
+        // دالة العودة الحركية العكسية الموحدة (Fly-back trigger)
+        const triggerFlybackTransition = () => {
+            if (currentSystemState !== STATE_TUNNEL) return;
+            // إخفاء الألواح فوراً لتقليل جهد المعالجة أثناء العودة العكسية السريعة
+            tunnelsContext[activeDomain].panels.forEach(p => p.mesh.visible = false);
+            transitionProgress = 1;
+            currentSystemState = STATE_TRANSITION_OUT;
+            requestAnimationFrame(mainEngineLoop);
+        };
+
+        window.addEventListener('click', (e) => {
+            if (currentSystemState !== STATE_HUB) return;
+
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(hubGroup.children);
+
+            if (intersects.length > 0 && intersects[0].object.userData.domainId) {
+                activeDomain = intersects[0].object.userData.domainId;
+                const cfg = domainsConfig[activeDomain];
+
+                document.getElementById('main-hud-title').innerText = cfg.title;
+                document.getElementById('crumb-sub').innerText = ` > ${cfg.title}`;
+                
+                // إظهار النفق المستهدف قبل الحركة
+                tunnelsContext[activeDomain].mesh.visible = true;
+                
+                transitionProgress = 0;
+                scrollTargetZ = 0;
+                scrollCurrentZ = 0;
+                currentSystemState = STATE_TRANSITION_IN;
+            }
+        });
+
+        // تفعيل Breadcrumbs التفاعلي للعودة
+        document.getElementById('crumb-root').addEventListener('click', triggerFlybackTransition);
+
+        window.addEventListener('wheel', (e) => {
+            if (currentSystemState !== STATE_TUNNEL) return;
+
+            // آلية العودة عبر التمرير العكسي اللانهائي (Auto-Reverse Scroll Detect)
+            if (e.deltaY < -10 && scrollTargetZ <= 0) {
+                // الكشف عن تمرير للأعلى (deltaY سلبي) بينما قيمة التمرير هي صفر
+                triggerFlybackTransition();
+                return;
+            }
+
+            scrollTargetZ += e.deltaY * 0.75;
+            if (scrollTargetZ < 0) scrollTargetZ = 0;
+            const maxScroll = 25 * 340; // total panels * spacing
+            if (scrollTargetZ > maxScroll) scrollTargetZ = maxScroll;
+
+            // الحفاظ على نبض المحرك أثناء التمرير
+            mainEngineLoop();
+        }, { passive: true });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.render(scene, camera);
+        });
+
+        // Fire Foundational Loop
+        requestAnimationFrame(mainEngineLoop);
+    </script>
+</body>
+</html>
