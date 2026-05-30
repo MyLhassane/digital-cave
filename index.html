@@ -14,7 +14,7 @@
         @media screen and (orientation: portrait) { #orientation-screen { display: flex; } }
 </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.18/dist/lil-gui.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.18/dist/lil-gui.min.js"></script>
 </head>
 <body>
     <div id="fade-overlay"></div>
@@ -57,7 +57,7 @@
         scene.add(headlight);
 
         
-
+        
         function preserveOriginalPositions(geometry) {
             if (!geometry.attributes.origPosition) {
                 geometry.setAttribute('origPosition', geometry.attributes.position.clone());
@@ -114,7 +114,6 @@
         ];
 
         const interactiveTargets = [];
-        const branchMeshes = [];
 
         function createGlowingSignboard(text, colorHex) {
             const canvas = document.createElement('canvas');
@@ -139,11 +138,9 @@
             const branchLength = 1200;
             const branchGeo = new THREE.CylinderGeometry(150, 150, branchLength, 16, 20, true);
             branchGeo.rotateX(Math.PI / 2);
-            preserveOriginalPositions(branchGeo);
             applyCrystallineDisplacement(branchGeo);
             
             const branchMesh = new THREE.Mesh(branchGeo, caveMaterial);
-            branchMeshes.push(branchMesh);
             
             // Positioning branch correctly so it connects to main tunnel wall outwards
             branchMesh.position.set(0, 0, cfg.zFork);
@@ -166,24 +163,6 @@
             scene.add(signMesh);
             interactiveTargets.push(signMesh);
         });
-
-        function updateDisplacement() {
-            applyCrystallineDisplacement(mainTunnel.geometry);
-            branchMeshes.forEach(mesh => applyCrystallineDisplacement(mesh.geometry));
-        }
-
-        const gui = new lil.GUI({ title: 'لوحة التحكم' });
-        const dispFolder = gui.addFolder('الإزاحة المتجهية');
-        dispFolder.add(settings.displacement, 'amplitude', 0, 120, 1).name('السعة').onChange(updateDisplacement);
-        dispFolder.add(settings.displacement, 'detail', 0.005, 0.1, 0.001).name('التفاصيل').onChange(updateDisplacement);
-        dispFolder.add(settings.displacement, 'twist', 0, 1, 0.1).name('الالتواء').onChange(updateDisplacement);
-        dispFolder.add(settings.displacement, 'offset', 0, 0.1, 0.1).name('الإزاحة').onChange(updateDisplacement);
-        dispFolder.open();
-
-        const fogFolder = gui.addFolder('الضباب');
-        fogFolder.add(settings, 'fogDensity', 0, 0.003, 0.00001).name('الكثافة').onChange(updateFog);
-        fogFolder.addColor(settings, 'fogColor').name('لون الضباب').onChange(updateFog);
-        fogFolder.open();
 
         let targetZ = 150; let currentZ = 150;
         
