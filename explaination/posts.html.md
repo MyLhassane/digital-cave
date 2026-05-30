@@ -6,57 +6,102 @@
 
 ---
 
-## كيف تعمل الصفحة؟
+## هيكل الصفحة
+
+`index.html` ← `sections.html` ← **`posts.html`**
+
+```
+posts.html                        # HTML هيكل بسيط (18 سطرًا)
+    └── js/posts-main.js          # منطق الصفحة (وحدة ES)
+            ├── scene.js          # إنشاء المشهد والإضاءة
+            ├── geometry.js       # createCaveTunnel + createCaveMaterial
+            ├── animate.js        # حلقة التحريك + onFrameUpdate
+            ├── controls.js       # حركة اللمس/الفأر
+            └── ui.js             # startFadeAndRedirect
+```
+
+**هذه الصفحة هي الأكثر تعقيدًا من حيث التأثيرات البصرية.** تستخدم `onFrameUpdate` في حلقة التحريك لتشغيل تأثيرات خاصة كل إطار.
+
+---
+
+## كيف تعمل `posts-main.js`؟
 
 ### 1. قراءة المعاملات
 
 ```javascript
-const domainId = urlParams.get('domain') || 'natural';
+const domainId = urlParams.get("domain") || "natural";
 ```
 
-تقرأ معامل `domain` من الرابط (مثلًا: `posts.html?domain=natural&section=الفيزياء%20الكونية`).
-
-### 2. بناء كهف أوسع
+### 2. بناء كهف أوسع — عبر `createCaveTunnel`
 
 ```javascript
-const caveGeo = new THREE.CylinderGeometry(400, 400, caveLength, 20, 60, true);
+const caveMaterial = createCaveMaterial(0x01131a, 0x004466);
+const cave = createCaveTunnel({
+    radius: 400, length: caveLength, radialSegments: 20, heightSegments: 60,
+    zOffset: -caveLength / 2 + 200, material: caveMaterial
+});
 ```
 
-الكهف هنا أوسع (نصف قطر 400) وأطول من الكهف الرئيسي، لأنه يستوعب 10 لوحات موزعة على مسافات متساوية (320 وحدة بين كل لوحة وأخرى).
+- **أوسع وأطول** من بقية الكهوف (نصف قطر 400، طول 5200).
+- **تقسيمات أقل** حول المحيط (20 قطعة) لتقليل الحمل مع الحفاظ على المظهر البلوري.
 
 ### 3. المقالات (اللوحات)
 
-يوجد 10 لوحات مقالية، كل لوحة:
-- **Canvas 2D**: تحتوي على عنوان عربي (مثل "المقالة الرائعة 1") ونص وصفي طويل يتم توزيعه تلقائيًا عبر الأسطر.
-- **تناوب المواضع**: اللوحات الزوجية على اليسار والفردية على اليمين.
-- **تأثير العمق**: اللوحات تخف شفافيتها تدريجيًا عندما تبتعد عن الكاميرا.
+يوجد 10 لوحات مقالية:
+- تُرسم على **Canvas 2D** (512×680 بكسل) مع عنوان عربي ونص وصفي يُوزّع تلقائيًا عبر الأسطر.
+- تناوب المواضع (يمين/يسار) بتباعد 320 وحدة.
+- مجموعة في `THREE.Group` لسهولة الإدارة.
 
-### 4. سحر تغيير الألوان (Color Interpolation)
+### 4. التأثيرات الخاصة — عبر `onFrameUpdate`
+
+`animate.js` تستدعي `onFrameUpdate` في كل إطار، مما يسمح لـ `posts-main.js` بتشغيل تأثيرات مستمرة:
+
+#### أ. تغيير ألوان الجدران (Color Interpolation)
 
 ```javascript
-let colorProgress = Math.abs(currentZ) / (panelSpacing * 3);
+let colorProgress = Math.abs(state.currentZ) / (panelSpacing * 3);
 let currentFloor = Math.floor(colorProgress) % wallBaseColors.length;
 let currentCeil = (currentFloor + 1) % wallBaseColors.length;
-let blendFactor = colorProgress % 1;
-
 caveMaterial.color.copy(wallBaseColors[currentFloor])
     .lerp(wallBaseColors[currentCeil], blendFactor);
 ```
 
-جدران الكهف **تتغير ألوانها تدريجيًا** كلما تعمق المستخدم، مما يخلق إحساسًا بالتنقل عبر بيئات مختلفة. الألوان المحددة مسبقًا تنتقل بسلاسة باستخدام `lerp` (interpolation).
+4 ألوان أساسية محددة مسبقًا تنتقل بينها الجدران بسلاسة عبر `lerp`. لون الضباب يتغير أيضًا ليطابق الجدران.
 
-### 5. تأثيرات اللوحات المتقدمة
+#### ب. تأثيرات اللوحات حسب المسافة
 
-- **إخفاء اللوحات البعيدة**: اللوحات التي تبعد أكثر من 2400 وحدة أو أقرب من 130 وحدة تُخفى لتحسين الأداء.
-- **الشفافية المتغيرة**: اللوحات تتلاشى عند الاقتراب الشديد أو الابتعاد كثيرًا.
-- **دوران اللوحات**: اللوحات تدور تدريجيًا لتواجه الكاميرا عندما يقترب المستخدم منها.
+لكل لوحة، يُحسب `relativeZ = panel.z - state.currentZ`:
+- **إخفاء**: لوحات بعيدة جدًا (< -2400) أو خلف الكاميرا (> 130) → `visible = false`.
+- **شفافية متغيرة**: تتلاشى عند الاقتراب الشديد أو الابتعاد.
+- **دوران تدريجي**: اللوحات تدور لتواجه الكاميرا عندما يقترب المستخدم منها.
 
-### 6. العودة
+### 5. العودة
 
-التمرير للخلف عند المدخل يعيد المستخدم إلى `sections.html?domain=...`.
+`bindMovementControls(state, bounds, onExceedMax)` ← عند تجاوز الحد الخلفي، توجيه إلى `sections.html?domain=...`.
+
+### 6. حلقة التحريك — بدون تعقيد إضافي
+
+```javascript
+startAnimationLoop({
+    state, camera, headlight, renderer, scene,
+    onFrameUpdate: () => { /* كل التأثيرات الخاصة */ }
+});
+```
+
+`posts-main.js` لا تعيد كتابة حلقة التحريك. تستخدم `startAnimationLoop` مع `onFrameUpdate` لإضافة منطقها الخاص.
+
+---
+
+## ما الذي تغير؟
+
+| قبل | بعد |
+|-----|-----|
+| 219 سطرًا HTML + JS مضمّن | 18 سطرًا HTML + وحدة JS منفصلة |
+| كامل الكود مكرر من الصفحات الأخرى | استخدام `scene.js`، `animate.js`، `controls.js`، `geometry.js` |
+| CSS مضمّن في `<style>` | استخدام `styles/main.css` المشترك |
 
 ---
 
 ## الخلاصة
 
-هذه الصفحة تمثل **محور المحتوى** في المشروع. كل التقنيات السابقة (الهندسة الكريستالية، الإضاءة، التفاعل، التلاشي) تخدم هدفًا واحدًا: تقديم المقالات بطريقة بصرية جذابة وغامرة.
+هذه الصفحة تمثل **محور المحتوى** في المشروع. كل التأثيرات المتقدمة (تغيير ألوان الجدران، شفافية اللوحات، الدوران) تُحقّق عبر `onFrameUpdate` دون الحاجة لتعديل حلقة التحريك الأساسية. هذا يثبت قوة التصميم المعياري: دورة أساسية بسيطة + إضافات عبر callbacks.

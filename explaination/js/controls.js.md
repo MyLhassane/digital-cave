@@ -22,7 +22,7 @@ function clamp(value, min, max) {
 
 ## الدوال الأساسية
 
-### 1. `bindMovementControls(state, bounds)`
+### 1. `bindMovementControls(state, bounds, onExceedMax)`
 
 تربط أحداث اللمس وعجلة الفأرة بحركة الكاميرا:
 
@@ -36,27 +36,53 @@ window.addEventListener("touchstart", (e) => {
 
 ```javascript
 window.addEventListener("touchmove", (e) => {
+    if (state.isTransitioning) return;  // ←新增: منع الحركة أثناء الانتقال
     e.preventDefault();
     const deltaY = state.touchStartY - touchY;
     state.targetZ -= deltaY * 2.0;
+
+    if (onExceedMax && state.targetZ > bounds.maxZ) {
+        onExceedMax();             // استدعاء دالة الخروج
+        state.targetZ = bounds.maxZ;
+        state.touchStartY = touchY;
+        return;
+    }
+
     state.targetZ = clamp(state.targetZ, bounds.minZ, bounds.maxZ);
-    state.touchStartY = touchY;  // تحديث نقطة البداية
+    state.touchStartY = touchY;
 }, { passive: false });
 ```
-- `e.preventDefault()` يمنع التمرير الافتراضي للمتصفح (مهم جدًا لتجربة سلسة).
-- `deltaY`: الفرق بين موقع الإصبع الحالي وبداية اللمس.
-- مضروب في `2.0` لزيادة حساسية الحركة.
-- `clamp`: يمنع الخروج عن حدود الكهف.
+- `state.isTransitioning` — يمنع الحركة إذا كان المستخدم في طور الانتقال لصفحة أخرى.
+- `onExceedMax` — دالة استدعاء تُستدعى عندما يحاول المستخدم تجاوز الحد الخلفي (الخروج من الكهف).
 
 #### عجلة الفأرة (Wheel)
 ```javascript
 window.addEventListener("wheel", (e) => {
+    if (state.isTransitioning) return;
     state.targetZ -= e.deltaY * 0.75;
+
+    if (onExceedMax && state.targetZ > bounds.maxZ) {
+        onExceedMax();
+        state.targetZ = bounds.maxZ;
+        return;
+    }
+
     state.targetZ = clamp(state.targetZ, bounds.minZ, bounds.maxZ);
 });
 ```
-- `deltaY`: قيمة التمرير (موجب = للأسفل، سالب = للأعلى).
-- مضروب في `0.75` لتناسب الحساسية مع اللمس.
+
+#### كيف يُستخدم `onExceedMax`؟
+
+في `sections-main.js` و `posts-main.js`، عندما يحاول المستخدم الرجوع للخلف أكثر من المسموح، يتم تشغيل تلاشي وإعادة توجيه:
+```javascript
+bindMovementControls(state, bounds, () => {
+    if (state.isTransitioning) return;
+    state.isTransitioning = true;
+    startFadeAndRedirect("index.html", 500);  // أو sections.html حسب الصفحة
+});
+```
+
+في `main.js` (المدخل الرئيسي)، لا يُمرر `onExceedMax` — فقط يتم تثبيت الكاميرا عند الحدود.
 
 ### 2. `bindSelectionControls({ state, camera, interactiveTargets, onTargetSelected })`
 

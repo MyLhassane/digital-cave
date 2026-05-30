@@ -4,63 +4,49 @@
 
 هذا الملف يحتوي على **حلقة التحريك الرئيسية** التي تشغّل المشهد باستمرار وتحدّث موقع الكاميرا لخلق حركة سلسة.
 
+جميع صفحات المشروع الثلاثة (`index.html`، `sections.html`، `posts.html`) تستخدم **نفس دالة التحريك** من هذا الملف. لا يوجد كود مكرر.
+
 ---
 
-## الدالة: `startAnimationLoop({ state, camera, headlight, renderer, scene })`
+## الدالة: `startAnimationLoop({ state, camera, headlight, renderer, scene, onFrameUpdate })`
 
 ### كيف تعمل؟
 
 ```javascript
 function animate() {
-    requestAnimationFrame(animate);  // استدعاء الحلقة مرة أخرى في الإطار التالي
+    requestAnimationFrame(animate);
     state.currentZ += (state.targetZ - state.currentZ) * 0.08;
-    ...
-    renderer.render(scene, camera);  // رسم الإطار الحالي
+    camera.position.z = state.currentZ;
+    headlight.position.z = state.currentZ - 10;
+
+    if (onFrameUpdate) onFrameUpdate(state);  // ←新增
+
+    renderer.render(scene, camera);
 }
-animate();  // بدء الحلقة
+animate();
 ```
 
 ### شرح التفاصيل:
 
-1. **`requestAnimationFrame(animate)`**
-   - تستدعي نفسها مرة أخرى في الإطار القادم (عادة 60 مرة في الثانية).
-   - هذا ينشئ حلقة مستمرة تعيد الرسم باستمرار.
+1. **`requestAnimationFrame(animate)`** — تستدعي نفسها ~60 مرة/ثانية لإنشاء حلقة مستمرة.
 
 2. **الاستيفاء الخطي (Lerp)**
    ```javascript
    state.currentZ += (state.targetZ - state.currentZ) * 0.08;
    ```
-   - الـ **`targetZ`**: الموقع الذي يريد المستخدم الوصول إليه (يتم تغييره بالتمرير/السحب).
-   - الـ **`currentZ`**: الموقع الحالي الحقيقي للكاميرا.
-   - الفرق بينهما يُضرب في **0.08** ويضاف إلى `currentZ`.
-   - هذا يخلق **حركة سلسة ومتدرجة** بدلًا من القفز الفوري.
-   - قيمة 0.08 تعني أن الكاميرا تتحرك بنسبة 8% من المسافة المتبقية كل إطار.
+   الفرق بين الهدف (`targetZ`) والحالي (`currentZ`) يُضرب في 0.08 لحركة سلسة.
 
-3. **تحديث مواقع الكاميرا والكشاف**
-   ```javascript
-   camera.position.z = state.currentZ;
-   headlight.position.z = state.currentZ - 10;
-   camera.position.y = 0;
-   ```
-   - الكاميرا والكشاف الأمامي يتحركان معًا.
-   - `y = 0` يثبت الكاميرا في المنتصف رأسيًا (لا ترتفع أو تنخفض).
+3. **تحديث مواقع الكاميرا والكشاف** — يتحركان معًا على المحور Z.
 
-4. **رسم الإطار**
-   ```javascript
-   renderer.render(scene, camera);
-   ```
-
----
-
-## مقارنة: صفحات الوحدات vs الصفحات المضمنة
-
-- الـ **main.js + animate.js**: الحلقة تستخدم `state` المُدار من الخارج.
-- الـ **sections.html و posts.html**: الحلقة مكتوبة يدويًا بنفس المنطق لكن في سكربت مضمّن (inline).
-
-المنطق واحد: استيفاء سلس + تحريك الكاميرا + رسم المشهد.
+4. **`onFrameUpdate(state)` — دالة استدعاء اختيارية**
+   - إذا وُجدت، تُستدعى في كل إطار بعد تحريك الكاميرا وقبل الرسم.
+   - تستخدمها **`posts-main.js`** لإضافة تأثيرات خاصة:
+     - تغيير ألوان جدران الكهف تدريجيًا (Color Interpolation)
+     - تحريك شفافية ودوران لوحات المقالات
+     - تحديث لون الضباب ليتناسب مع الجدران
 
 ---
 
 ## لماذا قيمة 0.08؟
 
-هذا رقم تجريبي. لو كان أكبر (مثل 0.2)، ستكون الحركة أسرع ولكن أقل نعومة. لو كان أصغر (مثل 0.02)، ستكون أكثر نعومة ولكن أبطأ. 0.08 توازن جيد بين النعومة والاستجابة.
+رقم تجريبي. لو كان أكبر (مثل 0.2)، الحركة أسرع لكن أقل نعومة. لو أصغر (مثل 0.02)، أكثر نعومة لكن أبطأ. 0.08 توازن جيد.

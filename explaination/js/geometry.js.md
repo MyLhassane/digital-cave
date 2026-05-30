@@ -36,23 +36,46 @@ if (Math.abs(Math.sin(z * 0.04)) > 0.88) {
 بعض النقاط العشوائية تُلون بلون أزرق فاتح (بلورات متوهجة) والباقي بلون داكن.
 في النهاية، تعيد الدالة حساب المتجهات الطبيعية (`computeVertexNormals`) لتصحيح الإضاءة على السطح غير المنتظم.
 
-### 2. `createCaveMaterial()`
+### 2. `createCaveMaterial(colorHex, emissiveHex)`
 
 تنشئ مادة (Material) للكهف باستخدام:
 - `vertexColors: true` — استخدام ألوان القمم المخصصة
 - `flatShading: true` — تظليل مسطح (غير أملس) يبرز المظهر البلوري
 - `side: THREE.DoubleSide` — العرض من الداخل (لأن الكاميرا داخل الكهف)
-- `emissive: #004466` — توهج أزرق داكن داخلي
 
-### 3. `createMainTunnelMesh(material)`
+تقبل باراميترين اختياريين:
+- `colorHex` — لون المادة الأساسي (الافتراضي: `0x01131a`)
+- `emissiveHex` — لون التوهج الداخلي (الافتراضي: `0x004466`)
 
-تنشئ الأنبوب الرئيسي للكهف:
-- أسطوانة بطول 3500 وحدة، نصف قطر 400، 24 قطعة حول المحيط و 60 قطعة طوليًا.
-- تُدار 90 درجة (`rotateX`) لتصبح أفقية (على طول المحور Z).
-- تُزاح 1600 للخلف لتبدأ من أمام الكاميرا بقليل.
-- يُطبق عليها التشويه البلوري.
+**لماذا؟** لأن `sections.html` تحتاج ألوانًا مختلفة (`0x120124`, `0x440088`) عن `index.html` و `posts.html`. بدل تكرار الدالة، صارت تقبل باراميترات.
 
-### 4. `createBranchMesh(cfg, material)`
+### 3. `createCaveTunnel({ radius, length, radialSegments, heightSegments, zOffset, material })`
+
+دالة عامة لإنشاء **أي نفق كهفي** بقيم مرنة:
+
+```javascript
+export function createCaveTunnel({ radius, length, radialSegments, heightSegments, zOffset, material }) {
+    const geo = new THREE.CylinderGeometry(radius, radius, length, radialSegments, heightSegments, true);
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, 0, zOffset);
+    applyCrystallineDisplacement(geo);
+    return new THREE.Mesh(geo, material);
+}
+```
+
+هذه الدالة تحل محل ثلاثة تنفيذات مختلفة كانت موجودة سابقًا في `main.js`، `sections.html`، و `posts.html`. تستخدمها الآن جميع الصفحات بقيم مختلفة:
+
+| الاستخدام | radius | length | segments | zOffset |
+|-----------|--------|--------|----------|---------|
+| المدخل الرئيسي | 400 | 3500 | 24×60 | -1600 |
+| ممر الأقسام | 300 | متغير | 24×40 | `-length/2 + 100` |
+| كهف المقالات | 400 | 5200 | 20×60 | `-length/2 + 200` |
+
+### 4. `createMainTunnelMesh(material)`
+
+**للتواءق مع الإصدارات السابقة فقط.** تستخدم `createCaveTunnel` داخليًا بقيم المدخل الرئيسي. ما زالت `main.js` تستخدمها.
+
+### 5. `createBranchMesh(cfg, material)`
 
 تنشئ فرعًا جانبيًا:
 - أسطوانة أقصر (بطول 1200) وأضيق (نصف قطر 150).
