@@ -2,22 +2,39 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
-export function bindMovementControls(state, bounds) {
+export function bindMovementControls(state, bounds, onExceedMax) {
     window.addEventListener("touchstart", (e) => {
         state.touchStartY = e.touches[0].clientY;
     }, { passive: false });
 
     window.addEventListener("touchmove", (e) => {
+        if (state.isTransitioning) return;
         e.preventDefault();
         const touchY = e.touches[0].clientY;
         const deltaY = state.touchStartY - touchY;
         state.targetZ -= deltaY * 2.0;
+
+        if (onExceedMax && state.targetZ > bounds.maxZ) {
+            onExceedMax();
+            state.targetZ = bounds.maxZ;
+            state.touchStartY = touchY;
+            return;
+        }
+
         state.targetZ = clamp(state.targetZ, bounds.minZ, bounds.maxZ);
         state.touchStartY = touchY;
     }, { passive: false });
 
     window.addEventListener("wheel", (e) => {
+        if (state.isTransitioning) return;
         state.targetZ -= e.deltaY * 0.75;
+
+        if (onExceedMax && state.targetZ > bounds.maxZ) {
+            onExceedMax();
+            state.targetZ = bounds.maxZ;
+            return;
+        }
+
         state.targetZ = clamp(state.targetZ, bounds.minZ, bounds.maxZ);
     });
 }

@@ -24,15 +24,24 @@ export function applyCrystallineDisplacement(geometry) {
     geometry.computeVertexNormals();
 }
 
-export function createCaveMaterial() {
+export function createCaveMaterial(colorHex = 0x01131a, emissiveHex = 0x004466) {
     const THREE = window.THREE;
     return new THREE.MeshLambertMaterial({
         vertexColors: true,
         flatShading: true,
         side: THREE.DoubleSide,
-        color: new THREE.Color(0x01131a),
-        emissive: new THREE.Color(0x004466)
+        color: new THREE.Color(colorHex),
+        emissive: new THREE.Color(emissiveHex)
     });
+}
+
+export function createCaveTunnel({ radius, length, radialSegments, heightSegments, zOffset, material }) {
+    const THREE = window.THREE;
+    const geo = new THREE.CylinderGeometry(radius, radius, length, radialSegments, heightSegments, true);
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, 0, zOffset);
+    applyCrystallineDisplacement(geo);
+    return new THREE.Mesh(geo, material);
 }
 
 export function createMainTunnelMesh(material) {

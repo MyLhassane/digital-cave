@@ -1,4 +1,4 @@
-export function startAnimationLoop({ state, camera, headlight, renderer, scene }) {
+export function startAnimationLoop({ state, camera, headlight, renderer, scene, onFrameUpdate }) {
     function animate() {
         requestAnimationFrame(animate);
 
@@ -6,6 +6,8 @@ export function startAnimationLoop({ state, camera, headlight, renderer, scene }
         camera.position.z = state.currentZ;
         headlight.position.z = state.currentZ - 10;
         camera.position.y = 0;
+
+        if (onFrameUpdate) onFrameUpdate(state);
 
         renderer.render(scene, camera);
     }
